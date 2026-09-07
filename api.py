@@ -28,7 +28,7 @@ from auth_db import (
 )
 from checker import analyze_document
 from db_manager import add_file_to_db, delete_source_from_db, get_all_indexed_sources
-from email_service import send_password_reset_email, send_verification_email
+from email_service import send_password_reset_email, send_verification_email, smtp_is_configured
 
 
 load_dotenv()
@@ -90,6 +90,10 @@ async def add_security_headers(request: Request, call_next):
 @app.get("/health")
 def health_check():
     return {"status": "ok"}
+
+
+if not smtp_is_configured():
+    print("[EMAIL] WARNING: SMTP is not configured (need SMTP host/user/password/from). Verification and password-reset emails will fail.", flush=True)
 
 
 def create_access_token(user_id: int):

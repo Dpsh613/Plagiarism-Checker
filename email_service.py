@@ -10,11 +10,18 @@ from dotenv import load_dotenv
 load_dotenv()
 SMTP_EMAIL = os.getenv("SMTP_EMAIL")
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
+SMTP_HOST = os.getenv("SMTP_HOST")
+SMTP_PORT = os.getenv("SMTP_PORT")
+SMTP_USER = os.getenv("SMTP_USER")
+SMTP_FROM = os.getenv("SMTP_FROM")
+SMTP_STARTTLS = os.getenv("SMTP_STARTTLS")
 def _get_backend_url():
     if os.getenv("BACKEND_URL"):
         return os.getenv("BACKEND_URL").rstrip("/")
     if os.getenv("RAILWAY_PUBLIC_DOMAIN"):
         return f"https://{os.getenv('RAILWAY_PUBLIC_DOMAIN').rstrip('/')}"
+    if os.getenv("RENDER_EXTERNAL_URL"):
+        return os.getenv("RENDER_EXTERNAL_URL").rstrip("/")
     return "http://localhost:8000"
 
 
@@ -29,39 +36,67 @@ def _get_frontend_url():
     return "http://localhost:5173"
 
 
+def _get_smtp_config():
+    """Resolve SMTP settings. Provider-agnostic with Gmail-compatible defaults.
+
+    Minimal setup (Gmail): SMTP_EMAIL + SMTP_PASSWORD only.
+    Provider relay (e.g. Resend): SMTP_HOST + SMTP_PORT + SMTP_USER +
+    SMTP_PASSWORD + SMTP_FROM. SMTP_FROM defaults to the login user.
+    """
+    sender = (os.getenv("SMTP_EMAIL") or SMTP_EMAIL or "").strip()
+    password = (os.getenv("SMTP_PASSWORD") or SMTP_PASSWORD or "").replace(" ", "").strip()
+    host = (os.getenv("SMTP_HOST") or SMTP_HOST or "smtp.gmail.com").strip()
+    try:
+        port = int((os.getenv("SMTP_PORT") or SMTP_PORT or "587").strip())
+    except ValueError:
+        port = 587
+    user = (os.getenv("SMTP_USER") or SMTP_USER or sender).strip()
+    sender_from = (os.getenv("SMTP_FROM") or SMTP_FROM or sender).strip()
+    starttls_raw = os.getenv("SMTP_STARTTLS", SMTP_STARTTLS if SMTP_STARTTLS is not None else "true")
+    use_starttls = starttls_raw.strip().lower() == "true"
+    return {
+        "host": host,
+        "port": port,
+        "user": user,
+        "password": password,
+        "from": sender_from,
+        "starttls": use_starttls,
+    }
+
+
+def smtp_is_configured():
+    cfg = _get_smtp_config()
+    return bool(cfg["user"] and cfg["password"] and cfg["from"])
+
+
 def _send_email(target_email: str, subject: str, text: str, html: str) -> bool:
-    smtp_email = os.getenv("SMTP_EMAIL") or SMTP_EMAIL
-    smtp_password = os.getenv("SMTP_PASSWORD") or SMTP_PASSWORD
-    if not smtp_email or not smtp_password:
+    cfg = _get_smtp_config()
+    if not smtp_is_configured():
         return False
-    # Strip spaces if app password had spaces formatted
-    smtp_password = smtp_password.replace(" ", "").strip()
-    smtp_email = smtp_email.strip()
 
     message = MIMEMultipart("alternative")
     message["Subject"] = subject
-    message["From"] = smtp_email
+    message["From"] = cfg["from"]
     message["To"] = target_email
     message.attach(MIMEText(text, "plain"))
     message.attach(MIMEText(html, "html"))
 
-    # Try Port 587 (TLS - Cloud standard) first, fallback to Port 465 (SSL)
     try:
-        with smtplib.SMTP("smtp.gmail.com", 587, timeout=15) as server:
-            server.starttls()
-            server.login(smtp_email, smtp_password)
-            server.sendmail(smtp_email, target_email, message.as_string())
+        if cfg["port"] == 465:
+            with smtplib.SMTP_SSL(cfg["host"], cfg["port"], timeout=15) as server:
+                server.login(cfg["user"], cfg["password"])
+                server.sendmail(cfg["from"], target_email, message.as_string())
+        else:
+            with smtplib.SMTP(cfg["host"], cfg["port"], timeout=15) as server:
+                if cfg["starttls"]:
+                    server.starttls()
+                server.login(cfg["user"], cfg["password"])
+                server.sendmail(cfg["from"], target_email, message.as_string())
         return True
     except Exception as e:
-        print(f"[SMTP ERROR Port 587]: {e}", flush=True)
-        try:
-            with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=15) as server:
-                server.login(smtp_email, smtp_password)
-                server.sendmail(smtp_email, target_email, message.as_string())
-            return True
-        except Exception as e2:
-            print(f"[SMTP ERROR Port 465]: {e2}", flush=True)
-            return False
+        # Never log credentials: only host, port and the server's error message.
+        print(f"[SMTP ERROR {cfg['host']}:{cfg['port']}]: {e}", flush=True)
+        return False
 
 
 def send_verification_email(target_email: str, token: str):
