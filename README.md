@@ -33,9 +33,7 @@ However, you can't submit an unfinished draft to Turnitin just to check it. Chec
 ## 🚀 How to Run It Locally
 
 Since this app runs AI models directly on your machine, it requires about 1GB of RAM and Python installed on your computer.
-
 ### 1. Configure Environment Variables
-CheckMate uses email verification and password reset functionality. You need an SMTP account (like a free Gmail App Password) to send these emails.
 
 1. Copy the `.env.example` file to `.env`:
    ```bash
@@ -43,8 +41,6 @@ CheckMate uses email verification and password reset functionality. You need an 
    ```
 2. Open `.env` and fill in your details:
    ```env
-   SMTP_EMAIL=your_email@gmail.com
-   SMTP_PASSWORD=your_app_password
    JWT_SECRET_KEY=your_secure_random_string
    APP_ENV=development
    # Production only: use HTTPS URLs and set COOKIE_SECURE=true
@@ -53,10 +49,9 @@ CheckMate uses email verification and password reset functionality. You need an 
    # BACKEND_URL=https://api.your-production-domain.com
    # COOKIE_SECURE=true
    ```
-   * **SMTP**: If using Gmail, you must generate an "App Password" from your Google Account Security settings. Do not use your regular password.
-   * **JWT_SECRET_KEY**: This signs login sessions. Generate it with `python -c "import secrets; print(secrets.token_hex(32))"`. It is mandatory when `APP_ENV=production`.
-   * **Production**: Set `APP_ENV=production`, use HTTPS for every URL, and set `COOKIE_SECURE=true`. The application refuses insecure production settings.
-   * **Privacy**: Never commit `.env`, `users.sqlite`, `my_plagiarism_db`, `dataset_pdfs`, or `temp_uploads`. These may contain credentials, account records, source text, or drafts.
+* **JWT_SECRET_KEY**: This signs login sessions. Generate it with `python -c "import secrets; print(secrets.token_hex(32))"`. It is mandatory when `APP_ENV=production`.
+* **Production**: Set `APP_ENV=production`, use HTTPS for every URL, and set `COOKIE_SECURE=true`. The application refuses insecure production settings.
+* **Privacy**: Never commit `.env`, `users.sqlite`, `my_plagiarism_db`, `dataset_pdfs`, or `temp_uploads`. These may contain account records, source text, or drafts.
 
 ### 2. Start the Backend
 Clone the repository and install the Python libraries:
@@ -80,4 +75,4 @@ npm run dev
 ```
 
 ### 4. Open CheckMate
-Open `http://localhost:5173` in your browser. Register a new account, verify it using the link sent to your email, and start analyzing your drafts!
+Open `http://localhost:5173` in your browser. Register a new account, log in, and start analyzing your drafts!

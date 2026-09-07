@@ -1,5 +1,4 @@
 import os
-import sqlite3
 import tempfile
 import unittest
 
@@ -18,26 +17,25 @@ class AuthSecurityTests(unittest.TestCase):
         auth_db.DB_FILE = self.original_db_file
         self.temp_dir.cleanup()
 
-    def test_new_users_require_verification(self):
+    def test_new_users_can_log_in_immediately(self):
         success, _ = auth_db.create_user("student@example.com", "correct-horse-battery-staple")
         self.assertTrue(success)
-        self.assertFalse(auth_db.get_user_by_email("student@example.com")["is_verified"])
+        self.assertTrue(auth_db.get_user_by_email("student@example.com")["is_verified"])
+        self.assertTrue(
+            auth_db.verify_password(
+                "correct-horse-battery-staple",
+                auth_db.get_user_by_email("student@example.com")["password_hash"],
+            )
+        )
 
     def test_password_limits_are_enforced_without_truncation(self):
         self.assertFalse(auth_db.create_user("short@example.com", "short")[0])
         self.assertFalse(auth_db.create_user("long@example.com", "a" * 73)[0])
 
-    def test_one_time_tokens_are_hashed_and_consumed(self):
-        auth_db.create_user("student@example.com", "correct-horse-battery-staple")
-        token = auth_db.create_password_reset_token("student@example.com")
-        conn = sqlite3.connect(auth_db.DB_FILE)
-        try:
-            stored_hash = conn.execute("SELECT token_hash FROM password_reset_tokens").fetchone()[0]
-        finally:
-            conn.close()
-        self.assertNotEqual(token, stored_hash)
-        self.assertTrue(auth_db.reset_password_with_token(token, "another-safe-password")[0])
-        self.assertFalse(auth_db.reset_password_with_token(token, "another-safe-password")[0])
+    def test_duplicate_registration_is_rejected(self):
+        self.assertTrue(auth_db.create_user("student@example.com", "correct-horse-battery-staple")[0])
+        success, _ = auth_db.create_user("student@example.com", "another-safe-password")
+        self.assertFalse(success)
 
 
 class ArxivUrlValidationTests(unittest.TestCase):
@@ -71,14 +69,12 @@ class ApiSecurityIntegrationTests(unittest.TestCase):
         auth_db.DB_FILE = self.original_db_file
         self.temp_dir.cleanup()
 
-    def test_verified_login_requires_csrf_for_state_changes(self):
+    def test_login_requires_csrf_for_state_changes(self):
         password = "correct-horse-battery-staple"
         register = self.client.post("/register", json={"email": "student@example.com", "password": password})
         self.assertEqual(register.status_code, 200)
-        self.assertFalse(auth_db.get_user_by_email("student@example.com")["is_verified"])
+        self.assertTrue(auth_db.get_user_by_email("student@example.com")["is_verified"])
 
-        token = auth_db.create_verification_token("student@example.com")
-        self.assertTrue(auth_db.verify_user_token(token)[0])
         login = self.client.post("/login", json={"email": "student@example.com", "password": password})
         self.assertEqual(login.status_code, 200)
         self.assertIn("HttpOnly", login.headers["set-cookie"])

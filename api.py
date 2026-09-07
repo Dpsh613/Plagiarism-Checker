@@ -9,7 +9,7 @@ import uvicorn
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, File, HTTPException, Path, Query, Request, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, EmailStr, Field
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
@@ -17,18 +17,12 @@ from slowapi.util import get_remote_address
 
 from arxiv_manager import download_specific_arxiv_paper, search_arxiv_metadata
 from auth_db import (
-    create_password_reset_token,
     create_user,
-    create_verification_token,
-    delete_user_by_email,
     get_user_by_email,
-    reset_password_with_token,
     verify_password,
-    verify_user_token,
 )
 from checker import analyze_document
 from db_manager import add_file_to_db, delete_source_from_db, get_all_indexed_sources
-from email_service import send_password_reset_email, send_verification_email, smtp_is_configured
 
 
 load_dotenv()
@@ -92,10 +86,6 @@ def health_check():
     return {"status": "ok"}
 
 
-if not smtp_is_configured():
-    print("[EMAIL] WARNING: SMTP is not configured (need SMTP host/user/password/from). Verification and password-reset emails will fail.", flush=True)
-
-
 def create_access_token(user_id: int):
     expires_at = datetime.now(timezone.utc) + ACCESS_TOKEN_LIFETIME
     csrf_token = secrets.token_urlsafe(32)
@@ -142,15 +132,6 @@ class UserAuthRequest(BaseModel):
     password: str = Field(min_length=12, max_length=72)
 
 
-class UserPasswordResetRequest(BaseModel):
-    token: str = Field(min_length=32, max_length=256)
-    new_password: str = Field(min_length=12, max_length=72)
-
-
-class ForgotPasswordRequest(BaseModel):
-    email: EmailStr
-
-
 class ArxivDownloadRequest(BaseModel):
     pdf_url: str = Field(min_length=1, max_length=2048)
     title: str = Field(min_length=1, max_length=300)
@@ -160,40 +141,10 @@ class ArxivDownloadRequest(BaseModel):
 @limiter.limit("5/minute")
 async def register(request: Request, user: UserAuthRequest):
     email = str(user.email)
-    auto_verify = os.getenv("AUTO_VERIFY_LOCAL", "false").lower() == "true"
-    success, msg = create_user(email, user.password, is_verified=auto_verify)
+    success, msg = create_user(email, user.password)
     if not success:
         raise HTTPException(status_code=400, detail=msg)
-    if auto_verify:
-        return {"status": "success", "message": "Account created and verified! You can now log in immediately."}
-    token = create_verification_token(email)
-    if not send_verification_email(email, token):
-        return {"status": "success", "message": "Account created. Configure email delivery or request a new verification email."}
-    return {"status": "success", "message": "Account created! Please check your email to verify."}
-
-
-@app.post("/resend-verification")
-@limiter.limit("3/minute")
-async def resend_verification(request: Request, user: ForgotPasswordRequest):
-    email = str(user.email).strip().lower()
-    u = get_user_by_email(email)
-    if not u:
-        raise HTTPException(status_code=400, detail="Account not found. Please register first.")
-    if u["is_verified"]:
-        return {"status": "success", "message": "Account is already verified. You can log in directly."}
-    token = create_verification_token(email)
-    if not send_verification_email(email, token):
-        raise HTTPException(status_code=500, detail="Failed to send verification email. Check backend SMTP settings.")
-    return {"status": "success", "message": "Verification email resent! Please check your inbox."}
-
-
-@app.get("/verify")
-@limiter.limit("10/minute")
-async def verify_email(request: Request, token: str = Query(min_length=32, max_length=256)):
-    success, msg = verify_user_token(token)
-    if not success:
-        return HTMLResponse(content=f"<html><body><h2>Verification Failed</h2><p>{msg}</p></body></html>", status_code=400)
-    return HTMLResponse(content="<html><body><h2>Verification Successful!</h2><p>You can now close this window and log in to CheckMate.</p></body></html>")
+    return {"status": "success", "message": "Account created! You can now log in."}
 
 
 @app.post("/login")
@@ -202,8 +153,6 @@ async def login(request: Request, response: Response, user: UserAuthRequest):
     db_user = get_user_by_email(str(user.email))
     if not db_user or not verify_password(user.password, db_user["password_hash"]):
         raise HTTPException(status_code=401, detail="Invalid email or password")
-    if not db_user["is_verified"]:
-        raise HTTPException(status_code=403, detail="Please verify your email before logging in")
 
     token, csrf_token = create_access_token(db_user["id"])
     response.set_cookie(
@@ -229,25 +178,6 @@ async def csrf_token(request: Request):
 async def logout(response: Response):
     response.delete_cookie(key="access_token", httponly=True, samesite=COOKIE_SAMESITE, secure=COOKIE_SECURE, path="/")
     return {"status": "success", "message": "Logged out successfully"}
-
-
-@app.post("/forgot-password")
-@limiter.limit("3/minute")
-async def forgot_password(request: Request, req: ForgotPasswordRequest):
-    email = str(req.email)
-    if get_user_by_email(email):
-        token = create_password_reset_token(email)
-        send_password_reset_email(email, token)
-    return {"status": "success", "message": "If an account with that email exists, we have sent a password reset link."}
-
-
-@app.post("/reset-password")
-@limiter.limit("5/minute")
-async def reset_password(request: Request, req: UserPasswordResetRequest):
-    success, msg = reset_password_with_token(req.token, req.new_password)
-    if not success:
-        raise HTTPException(status_code=400, detail=msg)
-    return {"status": "success", "message": "Password successfully reset. You can now log in."}
 
 
 @app.post("/analyze", dependencies=[Depends(require_csrf)])

@@ -132,13 +132,6 @@ function AuthScreen({ onLogin, isDarkMode, setIsDarkMode }) {
   const [successMsg, setSuccessMsg] = useState("");
   const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    const token = new URLSearchParams(window.location.hash.slice(1)).get('reset_token');
-    if (token) {
-      setAuthMode('reset');
-    }
-  }, []);
-
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
@@ -154,17 +147,6 @@ function AuthScreen({ onLogin, isDarkMode, setIsDarkMode }) {
       } else if (authMode === "login") {
         const res = await axios.post(`${API_BASE}/login`, { email, password });
         onLogin(res.data.email, res.data.csrf_token, res.data.access_token);
-      } else if (authMode === "forgot") {
-        const res = await axios.post(`${API_BASE}/forgot-password`, { email });
-        setSuccessMsg(res.data.message);
-        setEmail("");
-      } else if (authMode === "reset") {
-        const token = new URLSearchParams(window.location.hash.slice(1)).get('reset_token');
-        const res = await axios.post(`${API_BASE}/reset-password`, { token, new_password: password });
-        setSuccessMsg(res.data.message);
-        setAuthMode("login");
-        setPassword("");
-        window.history.replaceState({}, document.title, window.location.pathname);
       }
     } catch (err) {
       if (err.response?.status === 429) {
@@ -217,9 +199,7 @@ function AuthScreen({ onLogin, isDarkMode, setIsDarkMode }) {
         
         <div className="bg-white/80 dark:bg-[#0a0a0a]/80 backdrop-blur-xl p-10 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-2xl shadow-zinc-200/50 dark:shadow-none transition-colors">
           <h2 className="text-center font-medium text-lg mb-8 tracking-tight text-zinc-600 dark:text-zinc-400">
-            {authMode === "register" ? "Create an account" : 
-             authMode === "forgot" ? "Reset your password" : 
-             authMode === "reset" ? "Create new password" : "Log in to your account"}
+            {authMode === "register" ? "Create an account" : "Log in to your account"}
           </h2>
           
           {error && (
@@ -235,8 +215,7 @@ function AuthScreen({ onLogin, isDarkMode, setIsDarkMode }) {
           )}
 
           <form onSubmit={handleSubmit} className="space-y-5">
-            {authMode !== "reset" && (
-              <div>
+            <div>
                 <label className="block text-xs font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400 mb-2">Email address</label>
                 <div className="relative">
                   <Mail className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
@@ -250,11 +229,9 @@ function AuthScreen({ onLogin, isDarkMode, setIsDarkMode }) {
                   />
                 </div>
               </div>
-            )}
-            {authMode !== "forgot" && (
               <div>
                 <label className="block text-xs font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400 mb-2">
-                  {authMode === "reset" ? "New Password" : "Password"}
+                  Password
                 </label>
                 <div className="relative">
                   <input 
@@ -274,7 +251,6 @@ function AuthScreen({ onLogin, isDarkMode, setIsDarkMode }) {
                   </button>
                 </div>
               </div>
-            )}
             
             <button 
               type="submit" 
@@ -282,46 +258,24 @@ function AuthScreen({ onLogin, isDarkMode, setIsDarkMode }) {
               className="w-full bg-zinc-900 dark:bg-zinc-100 hover:bg-zinc-800 dark:hover:bg-white text-white dark:text-zinc-900 py-2.5 rounded-lg text-sm font-medium transition-all active:scale-[0.98] flex justify-center items-center gap-2 disabled:opacity-70 disabled:active:scale-100 mt-2"
             >
               {loading && <Loader2 className="w-4 h-4 animate-spin" />}
-              {authMode === "register" ? "Create Account" : 
-               authMode === "forgot" ? "Send Link" : 
-               authMode === "reset" ? "Update Password" : "Log In"}
+              {authMode === "register" ? "Create Account" : "Log In"}
             </button>
           </form>
 
-          {authMode === "login" && (
-            <div className="mt-6 text-center">
-              <button 
-                type="button"
-                onClick={() => {
-                  setAuthMode("forgot");
-                  setError("");
-                  setSuccessMsg("");
-                }}
-                className="text-xs text-zinc-500 hover:text-zinc-900 dark:hover:text-white transition-colors"
-              >
-                Forgot your password?
-              </button>
-            </div>
-          )}
-
-          {authMode !== "reset" && (
-            <div className="mt-8 pt-6 border-t border-zinc-100 dark:border-zinc-800 text-center text-xs text-zinc-500">
-              {authMode === "register" ? "Already have an account?" : 
-               authMode === "forgot" ? "Remember your password?" : "Don't have an account?"}
-              <button 
-                type="button"
-                onClick={() => {
-                  setAuthMode(authMode === "register" ? "login" : authMode === "forgot" ? "login" : "register");
-                  setError("");
-                  setSuccessMsg("");
-                }}
-                className="ml-2 font-medium text-zinc-900 dark:text-zinc-100 hover:underline"
-              >
-                {authMode === "register" ? "Log in" : 
-                 authMode === "forgot" ? "Log in" : "Sign up"}
-              </button>
-            </div>
-          )}
+          <div className="mt-8 pt-6 border-t border-zinc-100 dark:border-zinc-800 text-center text-xs text-zinc-500">
+            {authMode === "register" ? "Already have an account?" : "Don't have an account?"}
+            <button 
+              type="button"
+              onClick={() => {
+                setAuthMode(authMode === "register" ? "login" : "register");
+                setError("");
+                setSuccessMsg("");
+              }}
+              className="ml-2 font-medium text-zinc-900 dark:text-zinc-100 hover:underline"
+            >
+              {authMode === "register" ? "Log in" : "Sign up"}
+            </button>
+          </div>
         </div>
       </div>
     </div>
