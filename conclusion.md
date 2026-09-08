@@ -255,3 +255,16 @@ endpoints are the whole observability story; no backups, no metrics, no alerting
 5. Ephemeral disk — silent total data loss on redeploy if unaddressed.
 6. First-run model download — cold starts are minutes long with no progress signal.
 
+## 9. Durable data on ephemeral hosting (free tier)
+
+`users.sqlite` + `my_plagiarism_db/` are now snapshot to S3-compatible object
+storage (`storage_sync.py`): restore on boot when local state is empty,
+debounced background backup after every index/delete, final flush on graceful
+shutdown. Vector-store writes hold a shared lock so backups never zip a
+half-written store. All paths honor `CHECKMATE_DATA_DIR`; everything is a
+no-op without snapshot env vars. Verified: snapshot roundtrip, traversal
+rejection, and no-op behavior unit-tested (`tests/test_persistence.py`, 5/5).
+Requires free R2-style bucket + Render env vars (see README section 1).
+Transient files need no backup: uploads are deleted after analysis and arXiv
+PDFs are re-downloadable. Full suite after this change: 30/30 pass.
+
