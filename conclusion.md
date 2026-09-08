@@ -1,4 +1,4 @@
-# CheckMate — Demo Test Conclusion
+# PaperLens — Demo Test Conclusion
 
 End-to-end test with real embeddings (`all-MiniLM-L6-v2`), real arXiv downloads,
 and a draft of known composition. Every number below was measured, not assumed.

@@ -84,7 +84,7 @@ def _resolve_final_url(pdf_url: str):
         try:
             response = requests.get(
                 url,
-                headers={"User-Agent": "CheckMate/1.0"},
+                headers={"User-Agent": "PaperLens/1.0"},
                 stream=True,
                 timeout=(5, 15),
                 allow_redirects=False,
@@ -124,7 +124,7 @@ def download_specific_arxiv_paper(pdf_url: str, title: str, db_manager_add_func,
         try:
             with requests.get(
                 final_url,
-                headers={"User-Agent": "CheckMate/1.0"},
+                headers={"User-Agent": "PaperLens/1.0"},
                 stream=True,
                 timeout=(5, 30),
                 allow_redirects=False,

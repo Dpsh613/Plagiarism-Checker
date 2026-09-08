@@ -1,11 +1,11 @@
-# ♟️ CheckMate: A Personal Plagiarism Pre-Checker
+# 🔍 PaperLens: A Personal Plagiarism Pre-Checker
 
-**CheckMate** is a small, locally-hosted utility app built as a student project. It acts as a "pre-checker" for students and writers to run their drafts against a personal, curated database of sources before making a final submission to official tools like Turnitin.
+**PaperLens** is a small, locally-hosted utility app built as a student project. It acts as a "pre-checker" for students and writers to run their drafts against a personal, curated database of sources before making a final submission to official tools like Turnitin.
 
 ### 💡 Why I Built This
 When writing a paper, students often download dozens of PDFs (from ArXiv or textbooks). It's easy to accidentally patch-write or forget to paraphrase properly. 
 
-However, you can't submit an unfinished draft to Turnitin just to check it. CheckMate solves this: it lets you build a **mini, private database** of your specific reference materials, and scans your draft against *only those files*. Best of all, because it runs locally on your computer, your unpublished draft stays completely private.
+However, you can't submit an unfinished draft to Turnitin just to check it. PaperLens solves this: it lets you build a **mini, private database** of your specific reference materials, and scans your draft against *only those files*. Best of all, because it runs locally on your computer, your unpublished draft stays completely private.
 
 ---
 
@@ -74,5 +74,5 @@ npm install
 npm run dev
 ```
 
-### 4. Open CheckMate
+### 4. Open PaperLens
 Open `http://localhost:5173` in your browser. Register a new account, log in, and start analyzing your drafts!
