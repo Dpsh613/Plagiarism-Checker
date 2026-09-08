@@ -2,12 +2,15 @@ import hmac
 import os
 import secrets
 import uuid
+import asyncio
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 
 import jwt
 import uvicorn
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, File, HTTPException, Path, Query, Request, Response, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, EmailStr, Field
@@ -53,10 +56,46 @@ MAX_UPLOAD_BYTES = 5 * 1024 * 1024
 ALLOWED_EXTENSIONS = {".pdf", ".txt"}
 ALGORITHM = "HS256"
 ACCESS_TOKEN_LIFETIME = timedelta(hours=8)
+# Bound concurrent CPU-heavy jobs (embedding/index/analyze) so one request
+# cannot starve the event loop for everyone else on a small instance.
+MAX_HEAVY_JOBS = max(1, int(os.getenv("MAX_HEAVY_JOBS", "2")))
+HEAVY_RETRY_AFTER_SECONDS = 30
+heavy_job_semaphore = asyncio.Semaphore(MAX_HEAVY_JOBS)
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
+
+async def run_heavy_job(func, *args):
+    """Run blocking CPU/network work in a thread without freezing the loop.
+
+    Raises 503 with Retry-After when all heavy slots are busy (backpressure
+    instead of silently queueing minutes of work).
+    """
+    if heavy_job_semaphore.locked():
+        raise HTTPException(
+            status_code=503,
+            headers={"Retry-After": str(HEAVY_RETRY_AFTER_SECONDS)},
+            detail="Server is busy processing other documents. Please retry shortly.",
+        )
+    async with heavy_job_semaphore:
+        return await run_in_threadpool(func, *args)
+
 limiter = Limiter(key_func=get_remote_address)
-app = FastAPI(docs_url=None if IS_PRODUCTION else "/docs", redoc_url=None)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    yield
+    # Graceful shutdown (e.g. Render SIGTERM on sleep/redeploy): push one
+    # final snapshot synchronously. No-op when snapshots are unconfigured.
+    try:
+        from storage_sync import flush_backup
+
+        flush_backup()
+    except Exception as e:
+        print(f"[SNAPSHOT] shutdown flush failed: {e}", flush=True)
+
+
+app = FastAPI(docs_url=None if IS_PRODUCTION else "/docs", redoc_url=None, lifespan=lifespan)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_middleware(
@@ -81,9 +120,92 @@ async def add_security_headers(request: Request, call_next):
     return response
 
 
+def _sweep_stale_uploads(max_age_hours=24):
+    """Remove orphaned temp uploads left by killed/interrupted requests."""
+    import time
+
+    now = time.time()
+    try:
+        names = os.listdir(UPLOAD_FOLDER)
+    except OSError:
+        return
+    for name in names:
+        path = os.path.join(UPLOAD_FOLDER, name)
+        try:
+            if os.path.isfile(path) and now - os.path.getmtime(path) > max_age_hours * 3600:
+                os.remove(path)
+        except OSError:
+            pass
+
+
+_sweep_stale_uploads()
+
+
+@app.exception_handler(Exception)
+async def _unhandled_exception_handler(request: Request, exc: Exception):
+    # HTTPException/RateLimitExceeded keep their specific handlers; this is the
+    # last resort so tracebacks and server paths never leak to clients.
+    print(f"[ERROR] unhandled {request.method} {request.url.path}: {exc!r}", flush=True)
+    return JSONResponse(status_code=500, content={"detail": "Internal server error."})
+
+
 @app.get("/health")
 def health_check():
     return {"status": "ok"}
+
+
+@app.get("/health/deep")
+def deep_health_check():
+    """Component-level health for orchestrators: model, vector DB, disk, users DB."""
+    import shutil
+
+    components = {}
+    ok = True
+
+    try:
+        import model_manager
+
+        components["model"] = "ready" if model_manager._model is not None else "not_loaded"
+    except Exception as e:
+        ok = False
+        components["model"] = f"error: {e}"
+
+    try:
+        from db_manager import client as chroma_client
+
+        chroma_client.heartbeat()
+        components["vector_db"] = "ready"
+    except Exception as e:
+        ok = False
+        components["vector_db"] = f"error: {e}"
+
+    try:
+        from auth_db import _connect as _users_connect
+
+        conn = _users_connect()
+        try:
+            conn.execute("SELECT 1")
+        finally:
+            conn.close()
+        components["users_db"] = "ready"
+    except Exception as e:
+        ok = False
+        components["users_db"] = f"error: {e}"
+
+    try:
+        free_mb = shutil.disk_usage(".").free // (1024 * 1024)
+        components["disk_free_mb"] = free_mb
+        if free_mb < 100:
+            ok = False
+            components["disk"] = "low"
+        else:
+            components["disk"] = "ready"
+    except Exception as e:
+        ok = False
+        components["disk"] = f"error: {e}"
+
+    status = {"status": "ok" if ok else "degraded", "components": components}
+    return JSONResponse(content=status, status_code=200 if ok else 503)
 
 
 def create_access_token(user_id: int):
@@ -207,7 +329,7 @@ async def analyze_endpoint(request: Request, file: UploadFile = File(...), user_
             raise HTTPException(status_code=400, detail="Invalid PDF file.")
         if ext == ".txt" and b"\x00" in first_chunk:
             raise HTTPException(status_code=400, detail="Invalid text file.")
-        return JSONResponse(content=analyze_document(user_id, file_path))
+        return JSONResponse(content=await run_heavy_job(analyze_document, user_id, file_path))
     finally:
         await file.close()
         if os.path.exists(file_path):
@@ -217,7 +339,13 @@ async def analyze_endpoint(request: Request, file: UploadFile = File(...), user_
 @app.get("/database/files")
 @limiter.limit("20/minute")
 async def get_files(request: Request, user_id: int = Depends(get_current_user)):
-    return {"files": get_all_indexed_sources(user_id)}
+    try:
+        return {"files": get_all_indexed_sources(user_id)}
+    except Exception:
+        raise HTTPException(
+            status_code=503,
+            detail="Document database is temporarily unavailable. Please retry shortly.",
+        )
 
 
 @app.delete("/database/files/{filename}", dependencies=[Depends(require_csrf)])
@@ -233,16 +361,21 @@ async def delete_from_db(request: Request, filename: str = Path(min_length=1, ma
 @limiter.limit("10/minute")
 async def search_arxiv(request: Request, topic: str = Query(min_length=1, max_length=200), user_id: int = Depends(get_current_user)):
     try:
-        return {"results": search_arxiv_metadata(topic)}
+        return {"results": await run_heavy_job(search_arxiv_metadata, topic)}
+    except HTTPException:
+        raise
     except Exception:
-        raise HTTPException(status_code=502, detail="Unable to search arXiv right now.")
+        raise HTTPException(status_code=502, detail="Unable to search arXiv right now (it may be rate-limiting us).")
 
 
 @app.post("/arxiv/download", dependencies=[Depends(require_csrf)])
 @limiter.limit("5/minute")
 async def download_arxiv(request: Request, req: ArxivDownloadRequest, user_id: int = Depends(get_current_user)):
-    success, msg = download_specific_arxiv_paper(
-        req.pdf_url, req.title, lambda fpath, fname: add_file_to_db(user_id, fpath, fname)
+    success, msg = await run_heavy_job(
+        download_specific_arxiv_paper,
+        req.pdf_url,
+        req.title,
+        lambda fpath, fname, title, url: add_file_to_db(user_id, fpath, fname, title=title, source_url=url),
     )
     if not success:
         raise HTTPException(status_code=400, detail=msg)

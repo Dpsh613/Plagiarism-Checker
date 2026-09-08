@@ -2,8 +2,12 @@ import bcrypt
 import sqlite3
 from contextlib import contextmanager
 
+from storage_sync import restore_on_boot, users_db_path
 
-DB_FILE = "users.sqlite"
+
+DB_FILE = users_db_path()
+# Restore durable state first on ephemeral hosts (no-op when unconfigured).
+restore_on_boot()
 MIN_PASSWORD_BYTES = 12
 MAX_PASSWORD_BYTES = 72
 BCRYPT_ROUNDS = 12
@@ -21,6 +25,11 @@ def _password_bytes(password: str):
 def _connect():
     conn = sqlite3.connect(DB_FILE)
     conn.execute("PRAGMA foreign_keys = ON")
+    # Concurrent readers/writers (register + login + analyze bookkeeping)
+    # must not fail with "database is locked" under light concurrency.
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=5000")
+    conn.execute("PRAGMA synchronous=NORMAL")
     return conn
 
 

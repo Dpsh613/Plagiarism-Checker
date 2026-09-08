@@ -1,6 +1,7 @@
-import React, { useState, useCallback, useEffect } from "react";
+import React, { useState, useCallback, useEffect, useRef } from "react";
 import axios from "axios";
 axios.defaults.withCredentials = true;
+axios.defaults.timeout = 30000;
 axios.interceptors.request.use((config) => {
   const accessToken = localStorage.getItem("accessToken");
   if (accessToken) {
@@ -286,10 +287,13 @@ function PlagiarismDashboard({ email, onLogout, isDarkMode, setIsDarkMode }) {
   const [viewMode, setViewMode] = useState("analyzer");
   const [file, setFile] = useState(null);
   const [analysis, setAnalysis] = useState(null);
+  const [analysisError, setAnalysisError] = useState("");
   const [loading, setLoading] = useState(false);
   const [selectedSegment, setSelectedSegment] = useState(null);
+  const analyzeAbortRef = useRef(null);
 
   const [dbFiles, setDbFiles] = useState([]);
+  const [dbError, setDbError] = useState("");
   const [arxivTopic, setArxivTopic] = useState("");
   const [arxivResults, setArxivResults] = useState([]);
   const [arxivLoading, setArxivLoading] = useState(false);
@@ -308,24 +312,59 @@ function PlagiarismDashboard({ email, onLogout, isDarkMode, setIsDarkMode }) {
     if (viewMode === "database") fetchDbFiles();
   }, [viewMode, fetchDbFiles]);
 
+  useEffect(() => () => analyzeAbortRef.current?.abort(), []);
+
+  const describeRequestError = (err, fallback) => {
+    if (err?.code === "ECONNABORTED" || err?.name === "CanceledError") {
+      return "Request timed out or was cancelled. Try a smaller document or retry.";
+    }
+    if (err.response?.status === 503) {
+      const retry = err.response.headers?.["retry-after"];
+      return retry
+        ? `Server is busy. Please retry in ${retry} seconds.`
+        : "Server is busy. Please try again shortly.";
+    }
+    const detail = err.response?.data?.detail;
+    if (typeof detail === "string" && detail) return detail;
+    if (!err.response) return "Cannot reach the backend. Check your connection.";
+    return fallback;
+  };
+
   const handleAnalyze = async () => {
     if (!file) return;
+    analyzeAbortRef.current?.abort();
+    const controller = new AbortController();
+    analyzeAbortRef.current = controller;
     setLoading(true);
+    setAnalysisError("");
     const formData = new FormData();
     formData.append("file", file);
     try {
-      const response = await axios.post(`${API_BASE}/analyze`, formData);
-      setAnalysis(response.data);
+      const response = await axios.post(`${API_BASE}/analyze`, formData, {
+        signal: controller.signal,
+        timeout: 240000,
+      });
+      if (response.data?.error) {
+        setAnalysis(null);
+        setAnalysisError(response.data.error);
+      } else {
+        setAnalysis(response.data);
+      }
     } catch (err) {
       if (err.response?.status === 401) onLogout();
+      else if (err?.name !== "CanceledError") setAnalysisError(describeRequestError(err, "Analysis failed."));
     } finally {
+      if (analyzeAbortRef.current === controller) analyzeAbortRef.current = null;
       setLoading(false);
     }
   };
 
+  const cancelAnalyze = () => analyzeAbortRef.current?.abort();
+
   const handleArxivSearch = async () => {
     if (!arxivTopic.trim()) return;
     setArxivLoading(true);
+    setDbError("");
     try {
       const res = await axios.get(
         `${API_BASE}/arxiv/search?topic=${encodeURIComponent(arxivTopic)}`
@@ -333,6 +372,7 @@ function PlagiarismDashboard({ email, onLogout, isDarkMode, setIsDarkMode }) {
       setArxivResults(res.data.results);
     } catch(err) {
       if (err.response?.status === 401) onLogout();
+      else setDbError(describeRequestError(err, "arXiv search failed."));
     } finally {
       setArxivLoading(false);
     }
@@ -340,22 +380,25 @@ function PlagiarismDashboard({ email, onLogout, isDarkMode, setIsDarkMode }) {
 
   const indexArxivPaper = async (paper) => {
     try {
-      await axios.post(`${API_BASE}/arxiv/download`, {
+      const res = await axios.post(`${API_BASE}/arxiv/download`, {
         pdf_url: paper.pdf_url,
         title: paper.title,
-      });
+      }, { timeout: 600000 });
       fetchDbFiles();
+      if (res.data?.message?.includes("truncated")) setDbError(res.data.message);
     } catch (err) {
       if (err.response?.status === 401) onLogout();
+      else setDbError(describeRequestError(err, "Indexing failed."));
     }
   };
 
   const deleteDbFile = async (filename) => {
     try {
-      await axios.delete(`${API_BASE}/database/files/${filename}`);
+      await axios.delete(`${API_BASE}/database/files/${encodeURIComponent(filename)}`);
       fetchDbFiles();
     } catch(err) {
       if (err.response?.status === 401) onLogout();
+      else setDbError(describeRequestError(err, "Delete failed."));
     }
   };
 
@@ -471,17 +514,18 @@ function PlagiarismDashboard({ email, onLogout, isDarkMode, setIsDarkMode }) {
                       <p className="text-sm">No sources yet.</p>
                     </div>
                   ) : (
-                    dbFiles.map((f, i) => (
+                    dbFiles.map((f) => (
                       <div
-                        key={i}
+                        key={f.filename}
                         className="flex justify-between items-center p-4 rounded-xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-[#111] hover:border-zinc-300 dark:hover:border-zinc-700 transition-all group"
+                        title={f.filename}
                       >
                         <div className="flex items-center gap-3 overflow-hidden">
                           <FileText className="w-4 h-4 text-zinc-400 shrink-0" />
-                          <span className="text-sm font-medium truncate">{f}</span>
+                          <span className="text-sm font-medium truncate">{f.title || f.filename}</span>
                         </div>
                         <button
-                          onClick={() => deleteDbFile(f)}
+                          onClick={() => deleteDbFile(f.filename)}
                           className="opacity-0 group-hover:opacity-100 p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg transition-all text-zinc-500 hover:text-red-500"
                         >
                           <Trash2 className="w-4 h-4" />
@@ -520,6 +564,11 @@ function PlagiarismDashboard({ email, onLogout, isDarkMode, setIsDarkMode }) {
                     {arxivLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Search"}
                   </button>
                 </div>
+                {dbError && (
+                  <div className="mb-6 bg-red-50 dark:bg-red-950/30 text-red-600 dark:text-red-400 p-3 rounded-lg text-sm flex items-center gap-2 border border-red-100 dark:border-red-900/50">
+                    <AlertCircle className="w-4 h-4 shrink-0" /> {dbError}
+                  </div>
+                )}
                 <div className="space-y-4">
                   {arxivResults.map((res, i) => (
                     <div
@@ -574,10 +623,28 @@ function PlagiarismDashboard({ email, onLogout, isDarkMode, setIsDarkMode }) {
                     >
                       {loading ? <><Loader2 className="w-5 h-5 animate-spin" /> Scanning...</> : "Scan Document"}
                     </button>
+                    {loading && (
+                      <button
+                        onClick={cancelAnalyze}
+                        className="w-full mt-3 py-2.5 rounded-xl text-sm font-medium text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors"
+                      >
+                        Cancel
+                      </button>
+                    )}
+                    {analysisError && (
+                      <div className="mt-4 bg-red-50 dark:bg-red-950/30 text-red-600 dark:text-red-400 p-3 rounded-lg text-sm flex items-center gap-2 border border-red-100 dark:border-red-900/50 text-left">
+                        <AlertCircle className="w-4 h-4 shrink-0" /> {analysisError}
+                      </div>
+                    )}
                   </div>
                 </div>
               ) : (
                 <div className="bg-white dark:bg-[#111] border border-zinc-100 dark:border-zinc-900 w-full max-w-3xl p-10 lg:p-16 font-serif leading-loose text-lg text-justify rounded-2xl min-h-full animate-fade-in shadow-sm">
+                  {analysis.summary?.truncated && (
+                    <div className="font-sans text-sm text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50 rounded-xl px-4 py-3 mb-8">
+                      This large document was truncated during scanning — the score covers only part of it.
+                    </div>
+                  )}
                   {analysis.segments.map((seg, i) => (
                     <React.Fragment key={i}>{renderHighlightedText(seg)}</React.Fragment>
                   ))}
@@ -608,7 +675,7 @@ function PlagiarismDashboard({ email, onLogout, isDarkMode, setIsDarkMode }) {
                           <div className={`w-5 h-5 rounded-md flex items-center justify-center text-[10px] font-bold ${color.dot}`}>
                             {i + 1}
                           </div>
-                          <div className="flex-1 truncate text-sm font-medium">{src.filename}</div>
+                          <div className="flex-1 truncate text-sm font-medium" title={src.filename}>{src.title || src.filename}</div>
                           <div className="text-xs text-zinc-500">{src.matched_words} w</div>
                         </div>
                       );
