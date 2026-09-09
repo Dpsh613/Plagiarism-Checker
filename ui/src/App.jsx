@@ -198,7 +198,7 @@ function AuthScreen({ onLogin, isDarkMode, setIsDarkMode }) {
           <h1 className="font-bold text-3xl tracking-tighter">PaperLens</h1>
         </div>
         
-        <div className="bg-panel/90 dark:bg-[#0a0a0a]/80 backdrop-blur-xl p-10 rounded-2xl border border-line dark:border-zinc-800 shadow-2xl shadow-zinc-200/50 dark:shadow-none transition-colors">
+        <div className="bg-panel/90 dark:bg-[#0a0a0a]/80 backdrop-blur-xl p-6 sm:p-10 rounded-2xl border border-line dark:border-zinc-800 shadow-2xl shadow-zinc-200/50 dark:shadow-none transition-colors">
           <h2 className="text-center font-medium text-lg mb-8 tracking-tight text-zinc-600 dark:text-zinc-400">
             {authMode === "register" ? "Create an account" : "Log in to your account"}
           </h2>
@@ -446,16 +446,16 @@ function PlagiarismDashboard({ email, onLogout, isDarkMode, setIsDarkMode }) {
 
   return (
     <>
-      <header className="bg-panel/90 dark:bg-[#0a0a0a]/80 backdrop-blur-md border-b border-line dark:border-zinc-900 h-16 flex items-center px-8 gap-8 shrink-0 z-20 shadow-sm">
-        <div className="flex items-center gap-2 text-ink dark:text-zinc-100">
+      <header className="bg-panel/90 dark:bg-[#0a0a0a]/80 backdrop-blur-md border-b border-line dark:border-zinc-900 h-14 sm:h-16 flex items-center px-4 sm:px-8 gap-3 sm:gap-8 shrink-0 z-20 shadow-sm min-w-0">
+        <div className="flex items-center gap-2 text-ink dark:text-zinc-100 shrink-0">
           <BookOpen className="w-5 h-5" />
-          <h1 className="font-bold text-lg tracking-tight">PaperLens</h1>
+          <h1 className="hidden sm:block font-bold text-lg tracking-tight">PaperLens</h1>
         </div>
 
-        <nav className="flex gap-2 ml-8 flex-1">
+        <nav className="flex gap-1 sm:gap-2 ml-2 sm:ml-8 flex-1 min-w-0">
           <button
             onClick={() => setViewMode("analyzer")}
-            className={`px-3 py-1.5 rounded-md text-sm transition-all duration-300 ${
+            className={`px-2 sm:px-3 py-1.5 rounded-md text-xs sm:text-sm transition-all duration-300 ${
               viewMode === "analyzer"
                 ? "bg-panel-deep dark:bg-zinc-800 text-ink dark:text-zinc-100 font-medium"
                 : "text-ink-soft hover:text-ink dark:hover:text-zinc-300"
@@ -465,7 +465,7 @@ function PlagiarismDashboard({ email, onLogout, isDarkMode, setIsDarkMode }) {
           </button>
           <button
             onClick={() => setViewMode("database")}
-            className={`px-3 py-1.5 rounded-md text-sm transition-all duration-300 ${
+            className={`px-2 sm:px-3 py-1.5 rounded-md text-xs sm:text-sm transition-all duration-300 ${
               viewMode === "database"
                 ? "bg-panel-deep dark:bg-zinc-800 text-ink dark:text-zinc-100 font-medium"
                 : "text-ink-soft hover:text-ink dark:hover:text-zinc-300"
@@ -475,18 +475,18 @@ function PlagiarismDashboard({ email, onLogout, isDarkMode, setIsDarkMode }) {
           </button>
         </nav>
         
-        <div className="flex items-center gap-6">
+        <div className="flex items-center gap-3 sm:gap-6 shrink-0">
           <button
             onClick={() => setIsDarkMode(!isDarkMode)}
-            className="text-zinc-400 hover:text-ink dark:hover:text-zinc-100 transition-colors"
+            className="text-zinc-400 hover:text-ink dark:hover:text-zinc-100 transition-colors shrink-0"
           >
             {isDarkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
           </button>
-          <div className="flex items-center gap-3">
-            <span className="text-xs text-ink-soft">{email}</span>
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+            <span className="text-xs text-ink-soft truncate max-w-[90px] sm:max-w-none" title={email}>{email}</span>
             <button
               onClick={onLogout}
-              className="text-zinc-400 hover:text-ink dark:hover:text-zinc-100 transition-colors"
+              className="text-zinc-400 hover:text-ink dark:hover:text-zinc-100 transition-colors shrink-0"
             >
               <LogOut className="w-4 h-4" />
             </button>
@@ -494,11 +494,11 @@ function PlagiarismDashboard({ email, onLogout, isDarkMode, setIsDarkMode }) {
         </div>
       </header>
 
-      <div className="flex-1 flex overflow-hidden relative">
+      <div className="flex-1 flex flex-col lg:flex-row overflow-hidden relative">
         {viewMode === "database" ? (
-          <div className="flex-1 p-8 lg:p-12 overflow-y-auto bg-paper dark:bg-[#0a0a0a] animate-fade-in">
+          <div className="flex-1 p-4 sm:p-8 lg:p-12 overflow-y-auto bg-paper dark:bg-[#0a0a0a] animate-fade-in">
             <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-12">
-              <div className="animate-slide-up bg-panel dark:bg-zinc-900/40 p-8 rounded-3xl border border-line dark:border-zinc-800 shadow-xl shadow-zinc-200/40 dark:shadow-none" style={{animationDelay: "0.1s"}}>
+              <div className="animate-slide-up bg-panel dark:bg-zinc-900/40 p-5 sm:p-8 rounded-3xl border border-line dark:border-zinc-800 shadow-xl shadow-zinc-200/40 dark:shadow-none" style={{animationDelay: "0.1s"}}>
                 <div className="mb-8">
                   <h2 className="font-semibold text-xl flex items-center gap-2">
                     Indexed Sources
@@ -536,7 +536,7 @@ function PlagiarismDashboard({ email, onLogout, isDarkMode, setIsDarkMode }) {
                 </div>
               </div>
 
-              <div className="animate-slide-up bg-panel dark:bg-zinc-900/40 p-8 rounded-3xl border border-line dark:border-zinc-800 shadow-xl shadow-zinc-200/40 dark:shadow-none flex flex-col" style={{animationDelay: "0.2s"}}>
+              <div className="animate-slide-up bg-panel dark:bg-zinc-900/40 p-5 sm:p-8 rounded-3xl border border-line dark:border-zinc-800 shadow-xl shadow-zinc-200/40 dark:shadow-none flex flex-col" style={{animationDelay: "0.2s"}}>
                 <div className="mb-8">
                   <h2 className="font-semibold text-xl flex items-center gap-2">
                     Import from ArXiv
@@ -591,10 +591,10 @@ function PlagiarismDashboard({ email, onLogout, isDarkMode, setIsDarkMode }) {
           </div>
         ) : (
           <>
-            <div className="flex-1 overflow-y-auto bg-paper dark:bg-[#0a0a0a] flex flex-col items-center p-8 lg:p-12 transition-colors relative">
+            <div className="flex-1 overflow-y-auto bg-paper dark:bg-[#0a0a0a] flex flex-col items-center p-4 sm:p-8 lg:p-12 transition-colors relative">
               {!analysis ? (
                 <div className="m-auto w-full max-w-md animate-slide-up">
-                  <div className="bg-panel dark:bg-zinc-900/40 p-12 rounded-[2rem] border border-line dark:border-zinc-800 shadow-2xl shadow-zinc-200/50 dark:shadow-none text-center">
+                  <div className="bg-panel dark:bg-zinc-900/40 p-6 sm:p-12 rounded-[2rem] border border-line dark:border-zinc-800 shadow-2xl shadow-zinc-200/50 dark:shadow-none text-center">
                     <div className="w-16 h-16 border border-line dark:border-zinc-800 rounded-2xl flex items-center justify-center mx-auto mb-6 bg-panel-deep dark:bg-zinc-800 shadow-sm">
                       <UploadCloud className="w-6 h-6 text-zinc-600 dark:text-zinc-300" />
                     </div>
@@ -639,7 +639,7 @@ function PlagiarismDashboard({ email, onLogout, isDarkMode, setIsDarkMode }) {
                   </div>
                 </div>
               ) : (
-                <div className="bg-panel dark:bg-[#111] border border-line dark:border-zinc-900 w-full max-w-3xl p-10 lg:p-16 font-serif leading-loose text-lg text-justify rounded-2xl min-h-full animate-fade-in shadow-sm">
+                <div className="bg-panel dark:bg-[#111] border border-line dark:border-zinc-900 w-full max-w-3xl p-5 sm:p-10 lg:p-16 font-serif leading-loose text-lg text-justify rounded-2xl min-h-full animate-fade-in shadow-sm">
                   {analysis.summary?.truncated && (
                     <div className="font-sans text-sm text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50 rounded-xl px-4 py-3 mb-8">
                       This large document was truncated during scanning — the score covers only part of it.
@@ -653,7 +653,7 @@ function PlagiarismDashboard({ email, onLogout, isDarkMode, setIsDarkMode }) {
             </div>
 
             {analysis && (
-              <div className="w-[360px] bg-panel dark:bg-[#111] border-l border-line dark:border-zinc-900 flex flex-col shrink-0 z-10 animate-slide-in-right shadow-2xl lg:shadow-none">
+              <div className="w-full lg:w-[360px] bg-panel dark:bg-[#111] border-t lg:border-t-0 lg:border-l border-line dark:border-zinc-900 flex flex-col shrink-0 z-10 animate-slide-in-right shadow-2xl lg:shadow-none max-h-[45vh] lg:max-h-none overflow-y-auto lg:overflow-visible">
                 <div className="p-8 border-b border-line dark:border-zinc-900 flex flex-col items-center justify-center bg-panel-deep/40 dark:bg-transparent">
                   <div className="w-24 h-24 rounded-full border-[6px] border-line dark:border-zinc-800 flex flex-col items-center justify-center mb-4">
                     <span className="text-3xl font-bold tracking-tighter">
